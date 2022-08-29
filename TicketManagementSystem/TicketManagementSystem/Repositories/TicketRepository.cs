@@ -1,11 +1,12 @@
 ﻿using System.Collections.Generic;
 using System.Linq;
+using TicketManagementSystem.Models;
 
-namespace TicketManagementSystem
+namespace TicketManagementSystem.Repositories
 {
     public static class TicketRepository
     {
-        private static readonly List<Ticket> Tickets = new List<Ticket>();
+        private static readonly List<Ticket> Tickets = new();
 
         public static int CreateTicket(Ticket ticket)
         {

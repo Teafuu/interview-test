@@ -1,140 +1,94 @@
-﻿using System;
-using System.Configuration;
-using System.IO;
-using System.Text.Json;
-using EmailService;
+﻿using EmailService;
+using System;
+using System.Collections.Generic;
+using TicketManagementSystem.Exceptions;
+using TicketManagementSystem.Interfaces.Services;
+using TicketManagementSystem.Models;
+using TicketManagementSystem.Repositories;
 
 namespace TicketManagementSystem
 {
-    public class TicketService
+    public class TicketService : ITicketService
     {
-        public int CreateTicket(string t, Priority p, string assignedTo, string desc, DateTime d, bool isPayingCustomer)
+        private readonly List<string> _priorityFlags = new() {"Crash", "Important", "Failure"};
+        public int CreateTicket(string title, Priority priority, string assignedTo, string description, DateTime ticketDate, bool isPayingCustomer)
         {
-            // Check if t or desc are null or if they are invalid and throw exception
-            if (t == null || desc == null || t == "" || desc == "")
-            {
+            if (string.IsNullOrEmpty(description) 
+                || string.IsNullOrEmpty(title))
                 throw new InvalidTicketException("Title or description were null");
+
+            using var userRepository = new UserRepository(); // Will be disposed when scope ends
+            var user = userRepository.GetUser(assignedTo);
+
+            if (user is null) 
+                throw new UnknownUserException($"User {assignedTo} not found");
+
+            priority = RaisePriority(priority, ticketDate, title);
+
+            if (priority is Priority.High) 
+                new EmailServiceProxy().SendEmailToAdministrator(title, assignedTo);
+
+            var price = 0;
+            User accountManager = default;
+
+            if (isPayingCustomer) // Only paid customers have an account manager.
+            {
+                accountManager = userRepository.GetAccountManager();
+                price = priority == Priority.High 
+                    ? 100 
+                    : 50;
             }
 
-            User user = null;
-            using (var ur = new UserRepository())
+            return TicketRepository.CreateTicket(new Ticket
             {
-                if (assignedTo != null)
-                {
-                    user = ur.GetUser(assignedTo);
-                }
-            }
-
-            if (user == null)
-            {
-                throw new UnknownUserException("User " + assignedTo + " not found");
-            }
-
-            var priorityRaised = false;
-            if (d < DateTime.UtcNow - TimeSpan.FromHours(1))
-            {
-                if (p == Priority.Low)
-                {
-                    p = Priority.Medium;
-                    priorityRaised = true;
-                }
-                else if (p == Priority.Medium)
-                {
-                    p = Priority.High;
-                    priorityRaised = true;
-                }
-            }
-
-            if ((t.Contains("Crash") || t.Contains("Important") || t.Contains("Failure")) && !priorityRaised)
-            {
-                if (p == Priority.Low)
-                {
-                    p = Priority.Medium;
-                }
-                else if (p == Priority.Medium)
-                {
-                    p = Priority.High;
-                }
-            }
-
-            if (p == Priority.High)
-            {
-                var emailService = new EmailServiceProxy();
-                emailService.SendEmailToAdministrator(t, assignedTo);
-            }
-
-            double price = 0;
-            User accountManager = null;
-            if (isPayingCustomer)
-            {
-                // Only paid customers have an account manager.
-                accountManager = new UserRepository().GetAccountManager();
-                if (p == Priority.High)
-                {
-                    price = 100;
-                }
-                else
-                {
-                    price = 50;
-                }
-            }
-
-            var ticket = new Ticket()
-            {
-                Title = t,
+                Title = title,
                 AssignedUser = user,
-                Priority = p,
-                Description = desc,
-                Created = d,
+                Priority = priority,
+                Description = description,
+                Created = ticketDate,
                 PriceDollars = price,
                 AccountManager = accountManager
-            };
-
-            var id = TicketRepository.CreateTicket(ticket);
-
-            // Return the id
-            return id;
+            });
         }
 
         public void AssignTicket(int id, string username)
         {
-            User user = null;
-            using (var ur = new UserRepository())
-            {
-                if (username != null)
-                {
-                    user = ur.GetUser(username);
-                }
-            }
+            using var userRepository = new UserRepository(); // Will be disposed when scope ends
+            var user = userRepository.GetUser(username);
 
-            if (user == null)
-            {
+            if (user is null)
                 throw new UnknownUserException("User not found");
-            }
 
             var ticket = TicketRepository.GetTicket(id);
 
-            if (ticket == null)
-            {
-                throw new ApplicationException("No ticket found for id " + id);
-            }
+            if (ticket is null)
+                throw new ApplicationException($"No ticket found for id {id}");
 
             ticket.AssignedUser = user;
 
             TicketRepository.UpdateTicket(ticket);
         }
-
-        private void WriteTicketToFile(Ticket ticket)
+        
+        private Priority RaisePriority(Priority priority, DateTime ticketDate, string title)
         {
-            var ticketJson = JsonSerializer.Serialize(ticket);
-            File.WriteAllText(Path.Combine(Path.GetTempPath(), $"ticket_{ticket.Id}.json"), ticketJson);
-        }
-    }
+            if (ticketDate >= DateTime.UtcNow - TimeSpan.FromHours(1) 
+                && !_priorityFlags.Contains(title)) 
+                return priority;
 
-    public enum Priority
-    {
-        High,
-        Medium,
-        Low
+            return priority switch
+            {
+                Priority.Low => Priority.Medium,
+                Priority.Medium => Priority.High,
+                _ => priority
+            };
+
+            /* will always raise priority but is dependent of the priority order of the enum.
+            priority--;
+            if (priority < 0)
+                priority = 0;
+
+            return priority;
+            */
+        }
     }
 }
