@@ -17,11 +17,9 @@ namespace TicketManagementSystem
                 || string.IsNullOrEmpty(title))
                 throw new InvalidTicketException("Title or description were null");
 
-            using var userRepository = new UserRepository(); // Will be disposed when scope ends
-            var user = userRepository.GetUser(assignedTo);
+            using var userRepository = new UserRepository();
 
-            if (user is null) 
-                throw new UnknownUserException($"User {assignedTo} not found");
+            var user = GetUser(userRepository, assignedTo);
 
             priority = RaisePriority(priority, ticketDate, title);
 
@@ -54,10 +52,8 @@ namespace TicketManagementSystem
         public void AssignTicket(int id, string username)
         {
             using var userRepository = new UserRepository(); // Will be disposed when scope ends
-            var user = userRepository.GetUser(username);
 
-            if (user is null)
-                throw new UnknownUserException("User not found");
+            var user = GetUser(userRepository, username);
 
             var ticket = TicketRepository.GetTicket(id);
 
@@ -68,7 +64,22 @@ namespace TicketManagementSystem
 
             TicketRepository.UpdateTicket(ticket);
         }
-        
+
+        /*
+         * Might be unnecessary, on one hand it resolves different user exception handling
+         * on the other hand it's not really necessary..
+         * Passing repository not to create unnecessary database connections.
+         * Would like to create a singleton but that would require changing UserRepository
+         */
+        private User GetUser(UserRepository repository, string username) 
+        { 
+            var user = repository.GetUser(username);
+
+            if (user is null)
+                throw new UnknownUserException($"User {username} not found");
+            return user;
+        }
+
         private Priority RaisePriority(Priority priority, DateTime ticketDate, string title)
         {
             if (ticketDate >= DateTime.UtcNow - TimeSpan.FromHours(1) 
