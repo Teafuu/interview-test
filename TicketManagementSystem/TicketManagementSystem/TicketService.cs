@@ -76,6 +76,9 @@ namespace TicketManagementSystem
             if (string.IsNullOrWhiteSpace(username))
                 throw new UnknownUserException($"Username is null or whitespace");
 
+            if (repository is null)
+                throw new NullReferenceException("User Repository is null");
+
             var user = repository.GetUser(username);
 
             if (user is null)
