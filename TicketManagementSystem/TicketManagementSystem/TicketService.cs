@@ -71,8 +71,11 @@ namespace TicketManagementSystem
          * Passing repository not to create unnecessary database connections.
          * Would like to create a singleton but that would require changing UserRepository
          */
-        private User GetUser(UserRepository repository, string username) 
-        { 
+        private User GetUser(UserRepository repository, string username)
+        {
+            if (string.IsNullOrWhiteSpace(username))
+                throw new UnknownUserException($"Username is null or whitespace");
+
             var user = repository.GetUser(username);
 
             if (user is null)
